@@ -1,0 +1,7 @@
+#!/bin/bash
+
+cd $(dirname $0)
+
+docker run --name localhost-redis --network host --rm -d redis
+
+
