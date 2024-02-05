@@ -4,6 +4,5 @@ cd $(dirname $0)
 
 TAG=$(basename $PWD)
 
-docker run --network host --user $(id -u):$(id -g) --rm -it -v $PWD:/app $TAG "$@"
-
+docker run --network host --user $(id -u):$(id -g) --rm -it -v $PWD:/app --env-file local.env $TAG "$@"
 
