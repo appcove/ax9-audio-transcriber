@@ -4,7 +4,31 @@ import os
 import subprocess
 import requests
 import time
+import datetime
 
+
+FILE_TRANSCRIBE_STATUS_MAP = {
+    'JobWaiting':                   'Transcription job waiting',
+    'DownloadMedia':                'Downloading media file',
+    'DownloadMediaFailed':          'Download media failed',
+    'DownloadMediaFinished':        'Download media finished',
+    'ProbeMedia':                   'Probing media file',
+    'ProbeMediaFailed':             'Probe media failed',
+    'ProbeMediaFinished':           'Probe media finished',
+    'ExtractAudio':                 'Extracting audio from video',
+    'ExtractAudioFailed':           'Extract audio from video failed',
+    'ExtractAudioFinished':         'Extract audio from video finished',
+    'TranscribeAudio':              'Transcription in progress',
+    'TranscribeAudioFailed':        'Transcription failed',
+    'TranscribeAudioFinished':      'Transcription finished',
+    'UploadTranscription':          'Uploading transcription text',
+    'UploadTranscriptionFailed':    'Upload transcription text failed',
+    'UploadTranscriptionFinished':  'Upload transcription text finished',
+    'TextStorageQueued':            'Update transcribe record text queued',
+    'TextStorageFailed':            'Update transcribe record text failed',
+    'TextStorageFinished':          'Update transcribe record text finished',
+    'TranscriptionComplete':        'Audio transcription complete',
+}
 
 # Get the value of an environment variable
 URL = os.environ.get('URL')
@@ -24,10 +48,21 @@ def GetJob():
         print(err)
         return None
 
+def PostJobStatus(JobID, Status, *, Error=None):
+    try:
+        print(f'Job status changed to `' + FILE_TRANSCRIBE_STATUS_MAP.get(Status, '[Status Unkown]') + '`' + (' with error: ' + Error if Error else ''))
+        # post the job status
+        resp = requests.post(URL + '/PostJobStatus', params=params, json={'JobID': JobID, 'SecretKey': SECRET_KEY, 'Status': Status, 'Error': Error})
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError as err:
+        print(err)
+
+
+
 while True:
 
     print('______________________________________________________')
-    print('Starting a new iteration...')
+    print('Starting a new iteration on ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '...')
 
     JobID = None
     Download_URL = None
@@ -45,8 +80,7 @@ while True:
     Upload_URL = job.get('Upload_URL')
 
     if Download_URL is None:
-        print('No job download specified.')
-        requests.post(URL + '/PostJobError', params=params, json={'JobID': JobID, 'Error': 'No job download url found.'})
+        PostJobStatus(JobID, 'DownloadMediaFailed', Error='No download URL specified')
         print('Sleeping for 10 seconds...')
         time.sleep(10)
         continue
@@ -61,7 +95,7 @@ while True:
     print('')
 
     try:
-        print('Start file download...')
+        PostJobStatus(JobID, 'DownloadMedia', Error=None)
 
         # download the file
         resp = requests.get(Download_URL)
@@ -70,37 +104,33 @@ while True:
         with open('mediafile', 'wb') as file:
             file.write(resp.content)
         
-        print('File downloaded.')
+        PostJobStatus(JobID, 'DownloadMediaFinished', Error=None)
     except requests.exceptions.HTTPError as err:
-        requests.post(URL + '/PostJobError', params=params, json={'JobID': JobID, 'Error': str(err)})
-        print(err)
+        PostJobStatus(JobID, 'DownloadMediaFailed', Error=str(err))
         continue
 
     try:
-        print('Checking the file type using ffprobe...')
+        PostJobStatus(JobID, 'ProbeMedia', Error=None)
         
         # check the file's content type using ffprobe
         command = "ffprobe -v error -show_entries stream=codec_type -of default=noprint_wrappers=1 mediafile"
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
 
-        print('Checked the codec type. It was ' + str(result.stdout))
+        PostJobStatus(JobID, 'ProbeMediaFinished', Error=None)
     except subprocess.CalledProcessError as err:
-        requests.post(URL + '/PostJobError', params=params, json={'JobID': JobID, 'Error': str(err) + ': ' + result.stderr})
-        print(err)
+        PostJobStatus(JobID, 'ProbeMediaFailed', Error=str(err) + ': ' + err.stderr)
         continue
 
     
     # If the output contains 'video', it's a video file
     if 'video' in result.stdout:
-        print('It is a video file')
+        print('It is a video file.')
 
         # update the audio file name - ffmpeg is picky about the file extension
-        FileName_Audio = FileName_Audio + '.wav'
-
-        
+        FileName_Audio = FileName_Audio + '.wav'       
         
         try:
-            print('Extracting audio from the video file...')
+            PostJobStatus(JobID, 'ExtractAudio', Error=None)
 
             # Extract audio using ffmpeg, then clean up the video file
             command = f"ffmpeg -i mediafile -vn -acodec pcm_s16le -ar 44100 -ac 2 {FileName_Audio}"
@@ -109,12 +139,12 @@ while True:
             if result.returncode != 0:
                 error_output = result.stderr.strip()
                 raise subprocess.CalledProcessError(result.returncode, 'ffmpeg', error_output)
+            
+            PostJobStatus(JobID, 'ExtractAudioFinished', Error=None)
         except subprocess.CalledProcessError as err:
-            requests.post(URL + '/PostJobError', params=params, json={'JobID': JobID, 'Error': f"{err}: {err.stderr}"})
-            print(err)
+            PostJobStatus(JobID, 'ExtractAudioFailed', Error=str(err) + ': ' + err.stderr)
             continue
-
-        print('Audio extraction complete.')
+    
     elif 'audio' in result.stdout:
         print('It is an audio file.')
 
@@ -124,20 +154,19 @@ while True:
         print('Renamed the audio file')
     # .m4a files seem to have subtitle stream, and are mp4 files without video stream
     elif 'subtitle' in result.stdout:
-        print('It is a subtitle file, likely an m4a file with subtitle stream.')
+        print('It is a m4a file with subtitle stream.')
 
         # just rename it
         os.rename('mediafile', FileName_Audio)
 
         print('Renamed the subtitle file')
     else:
-        requests.post(URL + '/PostJobError', params=params, json={'JobID': JobID, 'Error': 'Incompatible codec type: ' + (result.stdout or 'None at all')})
-        print('Unknown file type')
+        PostJobStatus(JobID, 'TranscribeAudioFailed', Error='Unknown file type: ' + QA(result.stdout))
         continue
     
     
     try:
-        print('Transcribing the audio file...')
+        PostJobStatus(JobID, 'TranscribeAudio', Error=None)
 
         # transcribe the audio
         command = f"whisper {FileName_Audio} --model small --language en --output_format vtt"
@@ -145,25 +174,23 @@ while True:
         if result.returncode != 0:
             error_output = result.stderr.strip()
             raise subprocess.CalledProcessError(result.returncode, 'whisper', error_output)
+
+        PostJobStatus(JobID, 'TranscribeAudioFinished', Error=None)
     except subprocess.CalledProcessError as err:
-        requests.post(URL + '/PostJobError', params=params, json={'JobID': JobID, 'Error': str(err) + ': ' + err.stderr})
-        print(err)
+        PostJobStatus(JobID, 'TranscribeAudioFailed', Error=str(err) + ': ' + err.stderr)
         continue
 
-    print('Audio file transcription complete.')
-
     try:
-        print('Uploading the transcribed file to s3...')
+        PostJobStatus(JobID, 'UploadTranscription', Error=None)
 
         #read the file and upload it to s3 using the signed url
         with open(f'{FileName_Base}.vtt', 'rb') as file:
             resp = requests.put(Upload_URL['UploadURL'], data=file)
             resp.raise_for_status()
         
-        print('Transcription upload to s3 complete.')
+        PostJobStatus(JobID, 'UploadTranscriptionFinished', Error=None)
     except requests.exceptions.HTTPError as err:
-        requests.post(URL + '/PostJobError', params=params, json={'JobID': JobID, 'Error': str(err)})
-        print(err)
+        PostJobStatus(JobID, 'UploadTranscriptionFailed', Error=str(err))
         continue
     
     try:
