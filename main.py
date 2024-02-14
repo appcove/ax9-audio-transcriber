@@ -118,7 +118,7 @@ while True:
 
         PostJobStatus(JobID, 'ProbeMediaFinished', Error=None)
     except subprocess.CalledProcessError as err:
-        PostJobStatus(JobID, 'ProbeMediaFailed', Error=str(err) + ': ' + err.stderr)
+        PostJobStatus(JobID, 'ProbeMediaFailed', Error=str(err) + ': ' + str(err.output))
         continue
 
     
@@ -142,7 +142,7 @@ while True:
             
             PostJobStatus(JobID, 'ExtractAudioFinished', Error=None)
         except subprocess.CalledProcessError as err:
-            PostJobStatus(JobID, 'ExtractAudioFailed', Error=str(err) + ': ' + err.stderr)
+            PostJobStatus(JobID, 'ExtractAudioFailed', Error=str(err) + ': ' + str(err.output))
             continue
     
     elif 'audio' in result.stdout:
@@ -177,7 +177,7 @@ while True:
 
         PostJobStatus(JobID, 'TranscribeAudioFinished', Error=None)
     except subprocess.CalledProcessError as err:
-        PostJobStatus(JobID, 'TranscribeAudioFailed', Error=str(err) + ': ' + err.stderr)
+        PostJobStatus(JobID, 'TranscribeAudioFailed', Error=str(err) + ': ' + str(err.output))
         continue
 
     try:
