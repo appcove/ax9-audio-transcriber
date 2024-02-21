@@ -161,7 +161,7 @@ while True:
 
         print('Renamed the subtitle file')
     else:
-        PostJobStatus(JobID, 'TranscribeAudioFailed', Error='Unknown file type: ' + QA(result.stdout))
+        PostJobStatus(JobID, 'TranscribeAudioFailed', Error='Unknown file type: "' + str(result.stdout) + '"')
         continue
     
     
