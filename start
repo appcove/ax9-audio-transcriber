@@ -1,0 +1,8 @@
+#!/bin/bash
+
+cd $(dirname $0)
+
+TAG=$(basename $PWD)
+
+docker run --name ax9 -d --network host --rm -v $PWD:/app --env-file local.env --volume ax9-work:/work --volume ax9-cache:/root/.cache $TAG "$@"
+
