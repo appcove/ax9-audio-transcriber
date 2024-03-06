@@ -42,8 +42,9 @@ def GetJob():
         resp = requests.get(URL + '/GetJob', params=params)
         resp.raise_for_status()
         job = resp.json()
-
         return job
+    except requests.exceptions.JSONDecodeError as err:
+        return None
     except requests.exceptions.HTTPError as err:
         print(err)
         return None
